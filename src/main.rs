@@ -1,10 +1,14 @@
 /* spell-checker: disable */
+
+#![allow(arithmetic_overflow)]
+
+use bitreader::BitReader;
 use plotters::prelude::*;
 use std::io;
 use std::str;
 
 fn main() {
-    println!("Hello, world!");
+    println!("\n\n---- Programa Iniciado! -----\n\n");
     aplicacao_transmissora();
 }
 
@@ -63,62 +67,102 @@ fn camada_fisica_transmissora_codificacao_bipolar(quadro: &[u8]) -> &[u8] {
 fn meio_de_comunicacao(fluxo_bruto_de_bits: &[u8]) {
     let fluxo_bruto_de_bits_ponto_b = fluxo_bruto_de_bits;
 
-    plot_stuff(fluxo_bruto_de_bits);
+    let bit: u8 = fluxo_bruto_de_bits[0];
+
+    let bin = fluxo_bruto_de_bits
+        .iter()
+        .map(|x| format!("{:08b}", x))
+        .collect::<Vec<String>>()
+        .join("");
+
+    // println!("Fluxo de bits: {}", bin);
+
+    // for j in 0..fluxo_bruto_de_bits.len() {
+    //     println!(
+    //         "fluxo_bruto_de_bits[{}] = {:08b}\n",
+    //         j,
+    //         fluxo_bruto_de_bits.first().unwrap()
+    //     );
+    // }
+
+    println!("bit = {:08b}\n", bit);
+
+    plot_stuff(fluxo_bruto_de_bits_ponto_b);
 
     camada_fisica_receptora(fluxo_bruto_de_bits_ponto_b);
 }
 
 fn plot_stuff(fluxo_bruto_de_bits: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    const OUT_FILE_NAME: &'static str = "plotters-doc-data/twoscale.png";
+    println!("Plotting...\n");
+    const OUT_FILE_NAME: &'static str = "plotters-doc-data/twoscale.gif";
 
-    let root = BitMapBackend::new(OUT_FILE_NAME, (1024, 768)).into_drawing_area();
-    root.fill(&WHITE)?;
+    let byte: u8 = fluxo_bruto_de_bits[0];
 
-    let mut chart = ChartBuilder::on(&root)
-        .x_label_area_size(35)
-        .y_label_area_size(40)
-        .right_y_label_area_size(40)
-        .margin(5)
-        .caption("Dual Y-Axis Example", ("sans-serif", 50.0).into_font())
-        .build_cartesian_2d(0f32..10f32, (0.1f32..1e10f32).log_scale())?
-        .set_secondary_coord(0f32..10f32, -1.0f32..1.0f32);
+    let root_area = BitMapBackend::gif(OUT_FILE_NAME, (1024, 768), 1_000)?.into_drawing_area();
+    let c = 7;
 
-    chart
-        .configure_mesh()
-        .disable_x_mesh()
-        .disable_y_mesh()
-        .y_desc("Log Scale")
-        .y_label_formatter(&|x| format!("{:e}", x))
-        .draw()?;
+    for i in 0..c {
+        root_area.fill(&WHITE)?;
 
-    chart
-        .configure_secondary_axes()
-        .y_desc("Linear Scale")
-        .draw()?;
+        let root_area = root_area.titled("Image Title", ("sans-serif", 60))?;
 
-    chart
-        .draw_series(LineSeries::new(
-            (0..=100).map(|x| (x as f32 / 10.0, (1.02f32).powf(x as f32 * x as f32 / 10.0))),
-            &BLUE,
-        ))?
-        .label("y = 1.02^x^2")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+        let (upper, _lower) = root_area.split_vertically(512);
 
-    chart
-        .draw_secondary_series(LineSeries::new(
-            (0..=100).map(|x| (x as f32 / 10.0, (x as f32 / 5.0).sin())),
-            &RED,
-        ))?
-        .label("y = sin(2x)")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+        let x_axis1 = 0..8;
+        let x_axis2 = 0..8;
+        // let x_axis = [1, 0, 0, 1, 0, 1, 0, 1];
+        // let x_axis = fluxo_bruto_de_bits;
 
-    chart
-        .configure_series_labels()
-        .background_style(&RGBColor(128, 128, 128))
-        .draw()?;
+        let mut cc = ChartBuilder::on(&upper)
+            .margin(5)
+            .set_all_label_area_size(50)
+            .caption("Bit Transmission", ("sans-serif", 40))
+            .build_cartesian_2d(0..8, -1..2)?;
 
-    // To avoid the IO failure being ignored silently, we manually call the present function
-    root.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
+        cc.configure_mesh()
+            .x_labels(20)
+            .y_labels(10)
+            .disable_mesh()
+            .draw()?;
+
+        let mut y_axis: Vec<i32> = Vec::new();
+
+        for j in 0..c {
+            y_axis.push(BitReader::new(fluxo_bruto_de_bits).read_u8(1).unwrap() as i32);
+        }
+
+        // println!("y_axis = {:?}", y_axis);
+        // println!("first byte = {:08b}", byte);
+
+        println!("Iteration {}", i);
+
+        cc.draw_series(LineSeries::new(
+            x_axis1.map(|x| {
+                (
+                    x as i32,
+                    (((byte.wrapping_shl(x)) & (1 << (7 - i))) / (1 << (7 - i))) as i32,
+                )
+            }),
+            &BLACK,
+        ))?;
+
+        cc.draw_series(
+            (x_axis2.map(|x| {
+                (
+                    x as i32,
+                    (((byte.wrapping_shl(x)) & (1 << (7 - i))) / (1 << (7 - i))) as i32,
+                )
+            }))
+            .map(|point| Circle::new(point, 7, BLACK.filled())),
+        )?
+        .label("Bit")
+        .legend(|(x, y)| Circle::new((x, y), 5, BLACK.filled()));
+
+        cc.configure_series_labels().border_style(&BLACK).draw()?;
+
+        // To avoid the IO failure being ignored silently, we manually call the present function
+        root_area.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
+    }
     println!("Result has been saved to {}", OUT_FILE_NAME);
 
     Ok(())
@@ -141,5 +185,6 @@ fn camada_de_aplicacao_receptora(quadro: &[u8]) {
 }
 
 fn aplicacao_receptora(mensagem: String) {
-    println!("A mensagem recebida foi: {}", mensagem);
+    println!("\nA mensagem recebida foi: {}", mensagem);
+    println!("\n\n---- Programa Encerrrado. -----\n\n");
 }
